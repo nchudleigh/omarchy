@@ -1,20 +1,22 @@
 #!/bin/bash
 
 set -euo pipefail
-
 source "$(dirname "${BASH_SOURCE[0]}")/base-test.sh"
 
 test_tmp=$(mktemp -d)
 trap 'rm -rf "$test_tmp"' EXIT
 export HOME="$test_tmp/home" XDG_CONFIG_HOME="$test_tmp/config" OMARCHY_PATH="$ROOT"
 export DICTATION_LOG="$test_tmp/calls" DICTATION_INSTALLED="voxtype superwhisper"
-export HYPRLAND_INSTANCE_SIGNATURE=""
-mkdir -p "$test_tmp/bin"
+mkdir -p "$test_tmp/bin" "$XDG_CONFIG_HOME/omarchy"
 export PATH="$test_tmp/bin:$ROOT/bin:$PATH"
+config="$XDG_CONFIG_HOME/omarchy/dictation-backend"
 
 cat > "$test_tmp/bin/omarchy-cmd-present" <<'SH'
 #!/bin/bash
-[[ " $DICTATION_INSTALLED " == *" $1 "* ]]
+case "$1" in
+  omarchy-dictation-*|omarchy-install-dictation-*) command -v "$1" >/dev/null ;;
+  *) [[ " $DICTATION_INSTALLED " == *" $1 "* ]] ;;
+esac
 SH
 cat > "$test_tmp/bin/omarchy-cmd-missing" <<'SH'
 #!/bin/bash
@@ -24,11 +26,6 @@ cat > "$test_tmp/bin/omarchy-launch-floating-terminal-with-presentation" <<'SH'
 #!/bin/bash
 printf '%s\n' "$*" > "$DICTATION_INSTALL_LOG"
 SH
-cat > "$test_tmp/bin/omarchy-notification-send" <<'SH'
-#!/bin/bash
-printf '%s\n' "$*" > "$DICTATION_NOTIFICATION_LOG"
-SH
-export DICTATION_NOTIFICATION_LOG="$test_tmp/notification"
 export DICTATION_INSTALL_LOG="$test_tmp/install"
 for backend in voxtype superwhisper; do
   cat > "$test_tmp/bin/$backend" <<'SH'
@@ -37,41 +34,104 @@ printf '%s %s\n' "${0##*/}" "$*" >> "$DICTATION_LOG"
 exit "${DICTATION_EXIT:-0}"
 SH
 done
+for command in omarchy-pkg-add omarchy-notification-send hyprctl omarchy-restart-shell; do
+  cat > "$test_tmp/bin/$command" <<'SH'
+#!/bin/bash
+printf '%s %s\n' "${0##*/}" "$*" >> "$DICTATION_LOG"
+exit "${SETUP_EXIT:-0}"
+SH
+done
+cat > "$test_tmp/bin/omarchy-hw-vulkan" <<'SH'
+#!/bin/bash
+exit 1
+SH
+cat > "$test_tmp/bin/gum" <<'SH'
+#!/bin/bash
+exit "${CONFIRM_EXIT:-0}"
+SH
+cat > "$test_tmp/bin/bash" <<'SH'
+#!/bin/bash
+if [[ $1 == "/usr/share/superwhisper/setup-user" ]]; then
+  printf '%s\n' setup-user >> "$DICTATION_LOG"
+  exit "${SETUP_EXIT:-0}"
+else
+  exec /bin/bash "$@"
+fi
+SH
 chmod +x "$test_tmp/bin/"*
 
-[[ $(omarchy-dictation backend) == "voxtype" ]] || fail "existing Voxtype is the default when both are installed"
-DICTATION_INSTALLED=superwhisper
-[[ $(omarchy-dictation backend) == "superwhisper" ]] || fail "Superwhisper is selected when it is the only backend"
-DICTATION_INSTALLED=""
 if omarchy-dictation start 2> "$test_tmp/error"; then
-  fail "no installed backend fails without starting recording"
+  fail "unset backend must fail even when providers are installed"
 fi
-[[ ! -f $DICTATION_LOG ]] || fail "missing backend does not dispatch"
-pass "backend detection preserves Voxtype and supports Superwhisper alone"
+[[ ! -e $DICTATION_LOG ]] || fail "recording never configures or installs a backend"
+pass "dictation requires explicit configuration"
+omarchy-default-dictation superwhisper
+[[ $(cat "$DICTATION_INSTALL_LOG") == "omarchy-install-dictation-superwhisper" ]] || fail "Defaults launches backend installer"
+[[ ! -e $config ]] || fail "Defaults does not select before setup succeeds"
+if omarchy-default-dictation unknown > "$test_tmp/output" 2>&1; then fail "missing installer must fail"; fi
+if omarchy-default-dictation '../invalid' > "$test_tmp/output" 2>&1; then fail "invalid backend must fail"; fi
+pass "Defaults delegates setup without prematurely selecting a backend"
 
-DICTATION_INSTALLED="voxtype superwhisper"
+
 for backend in voxtype superwhisper; do
+  printf '%s\n' "$backend" > "$config"
+  [[ $(omarchy-default-dictation) == "$backend" ]] || fail "configured backend is readable"
   : > "$DICTATION_LOG"
-  omarchy-dictation backend "$backend"
-  if [[ $backend == "superwhisper" ]]; then
-    [[ $(cat "$DICTATION_LOG") == $'superwhisper shortcuts set toggle Alt+Space\nsuperwhisper shortcuts set hold none' ]] ||
-      fail "selecting Superwhisper hands recording shortcuts to Omarchy"
-  else
-    [[ ! -s $DICTATION_LOG ]] || fail "selecting Voxtype leaves Superwhisper settings alone"
-  fi
-  [[ $(omarchy-dictation backend) == "$backend" ]] || fail "backend selection persists"
-  : > "$DICTATION_LOG"
-  omarchy dictation start
-  omarchy dictation stop
-  omarchy dictation toggle
+  for action in start stop toggle; do omarchy dictation "$action"; done
   if [[ $backend == "voxtype" ]]; then
     expected=$'voxtype record start\nvoxtype record stop\nvoxtype record toggle'
   else
     expected=$'superwhisper start\nsuperwhisper stop\nsuperwhisper record'
   fi
-  [[ $(cat "$DICTATION_LOG") == "$expected" ]] || fail "shared commands dispatch to $backend" "$(cat "$DICTATION_LOG")"
+  [[ $(cat "$DICTATION_LOG") == "$expected" ]] || fail "adapter dispatches recording for $backend"
 done
-pass "shared start, stop, and toggle commands use the selected backend"
+pass "built-in adapters implement start stop and toggle"
+
+cat > "$test_tmp/bin/omarchy-dictation-future-backend" <<'SH'
+#!/bin/bash
+printf '%s\n' "$1" >> "$DICTATION_LOG"
+exit "${DICTATION_EXIT:-0}"
+SH
+chmod +x "$test_tmp/bin/omarchy-dictation-future-backend"
+cat > "$test_tmp/bin/omarchy-install-dictation-future-backend" <<'SH'
+#!/bin/bash
+exit 0
+SH
+chmod +x "$test_tmp/bin/omarchy-install-dictation-future-backend"
+omarchy-default-dictation future-backend
+[[ $(cat "$DICTATION_INSTALL_LOG") == "omarchy-install-dictation-future-backend" ]] || fail "third backend installer requires no selector changes"
+printf '%s\n' future-backend > "$config"
+: > "$DICTATION_LOG"
+for action in start stop toggle; do omarchy-dictation "$action"; done
+[[ $(cat "$DICTATION_LOG") == $'start\nstop\ntoggle' ]] || fail "third backend requires no dispatcher changes"
+result=0
+DICTATION_EXIT=7 omarchy-dictation start || result=$?
+(( result == 7 )) || fail "backend failures propagate"
+rm "$test_tmp/bin/omarchy-dictation-future-backend"
+if omarchy-dictation start 2> "$test_tmp/error"; then fail "missing adapter must fail"; fi
+printf '%s\n' '../invalid' > "$config"
+if omarchy-dictation start 2> "$test_tmp/error"; then fail "invalid backend must fail"; fi
+pass "external adapters follow the same protocol and errors propagate"
+
+printf '%s\n' voxtype > "$config"
+if SETUP_EXIT=1 omarchy-install-dictation-superwhisper > "$test_tmp/output" 2>&1; then fail "failed installation must fail"; fi
+[[ $(cat "$config") == "voxtype" ]] || fail "failed setup must preserve selection"
+if DICTATION_EXIT=7 omarchy-install-dictation-superwhisper > "$test_tmp/output" 2>&1; then fail "failed shortcut setup must fail"; fi
+[[ $(cat "$config") == "voxtype" ]] || fail "failed shortcuts must preserve selection"
+omarchy-install-dictation-superwhisper
+[[ $(omarchy-default-dictation) == "superwhisper" ]] || fail "installer selects Superwhisper"
+pass "Superwhisper installer owns setup and saves selection only after success"
+
+DICTATION_INSTALLED=superwhisper
+CONFIRM_EXIT=1 omarchy-install-dictation-voxtype
+[[ $(cat "$config") == "superwhisper" ]] || fail "cancelled installation preserves selection"
+omarchy-install-dictation-voxtype
+[[ $(omarchy-default-dictation) == "voxtype" ]] || fail "installer selects Voxtype"
+DICTATION_INSTALLED="voxtype superwhisper"
+: > "$DICTATION_LOG"
+omarchy-install-dictation-voxtype
+! grep -q 'voxtype setup' "$DICTATION_LOG" || fail "installed Voxtype is selected without repeating setup"
+pass "Voxtype installer selects existing installations and preserves cancellation"
 
 lua <<'LUA'
 local root = os.getenv("ROOT")
@@ -82,7 +142,7 @@ local missing = false
 o = { cmd_missing = function() return missing end }
 local real_open, real_popen, real_dofile = io.open, io.popen, dofile
 io.popen = function(command)
-  assert(command == "omarchy-dictation backend 2>/dev/null")
+  assert(command == "omarchy-default-dictation 2>/dev/null")
   return { read = function() return selected end, close = function() end }
 end
 io.open = function(path)
@@ -120,44 +180,6 @@ io.open, io.popen, dofile = real_open, real_popen, real_dofile
 LUA
 pass "desktop integration follows the selected backend without personal Hyprland config"
 
-if omarchy-dictation backend invalid 2> "$test_tmp/error"; then
-  fail "invalid backend is rejected"
-fi
-DICTATION_INSTALLED=superwhisper
-omarchy-dictation backend voxtype
-[[ $(cat "$DICTATION_INSTALL_LOG") == "omarchy-install-dictation-voxtype" ]] || fail "missing backend opens its installation flow"
-[[ $(omarchy-dictation backend) == "superwhisper" ]] || fail "pending installation preserves the saved backend"
-DICTATION_INSTALLED=voxtype
-if omarchy-dictation stop 2> "$test_tmp/error"; then
-  fail "missing selected backend does not silently switch"
-fi
-pass "invalid selections fail and missing backends install before switching"
-
-cat > "$test_tmp/bin/hyprctl" <<'SH'
-#!/bin/bash
-printf '%s\n' "$*" >> "$DICTATION_HYPR_LOG"
-SH
-chmod +x "$test_tmp/bin/hyprctl"
-export DICTATION_HYPR_LOG="$test_tmp/hypr"
-DICTATION_INSTALLED="voxtype superwhisper"
-omarchy-dictation backend voxtype
-if HYPRLAND_INSTANCE_SIGNATURE=test DICTATION_EXIT=7 omarchy-dictation backend superwhisper; then
-  fail "a failed shortcut handoff does not select Superwhisper"
-fi
-[[ $(omarchy-dictation backend) == "voxtype" ]] || fail "a failed shortcut handoff preserves the backend"
-pass "a failed native shortcut setup preserves the backend"
-
-DICTATION_INSTALLED=superwhisper
-omarchy-dictation backend superwhisper
-result=0
-DICTATION_EXIT=7 omarchy-dictation start || result=$?
-(( result == 7 )) || fail "backend failures reach the caller"
-printf '%s\n' invalid > "$XDG_CONFIG_HOME/omarchy/dictation-backend"
-if omarchy-dictation start 2> "$test_tmp/error"; then
-  fail "invalid saved backend is rejected"
-fi
-pass "backend errors and invalid saved settings fail clearly"
-
 cat > "$test_tmp/bin/systemctl" <<'SH'
 #!/bin/bash
 exit 0
@@ -167,10 +189,7 @@ cat > "$test_tmp/bin/omarchy-pkg-drop" <<'SH'
 exit 0
 SH
 chmod +x "$test_tmp/bin/systemctl" "$test_tmp/bin/omarchy-pkg-drop"
-printf '%s\n' voxtype > "$XDG_CONFIG_HOME/omarchy/dictation-backend"
-DICTATION_INSTALLED="voxtype superwhisper"
 omarchy-voxtype-remove
-[[ ! -e $XDG_CONFIG_HOME/omarchy/dictation-backend ]] || fail "removing Voxtype clears its saved selection"
-DICTATION_INSTALLED=superwhisper
-[[ $(omarchy-dictation backend) == "superwhisper" ]] || fail "removing Voxtype allows another installed backend to be detected"
-pass "removing Voxtype clears a stale backend selection"
+[[ ! -e $config ]] || fail "removing Voxtype clears selection"
+if omarchy-default-dictation 2> "$test_tmp/error"; then fail "removal must not auto-select another backend"; fi
+pass "removal clears selection without automatic fallback"

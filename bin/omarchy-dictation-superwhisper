@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# omarchy:summary=Record dictation using Superwhisper
+# omarchy:args=<start|stop|toggle>
+
+case "${1:-}" in
+  start|stop) superwhisper "$1" ;;
+  toggle) superwhisper record ;;
+  *) echo "Usage: omarchy dictation superwhisper <start|stop|toggle>" >&2; exit 1 ;;
+esac
