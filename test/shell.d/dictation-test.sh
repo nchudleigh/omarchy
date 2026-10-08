@@ -31,6 +31,8 @@ for backend in voxtype superwhisper; do
   cat > "$test_tmp/bin/$backend" <<'SH'
 #!/bin/bash
 printf '%s %s\n' "${0##*/}" "$*" >> "$DICTATION_LOG"
+if [[ $1 == "status" ]]; then echo "${VOXTYPE_STATUS:-idle}"; exit 0; fi
+if [[ -n ${FAIL_SETUP_STEP:-} && $* == "$FAIL_SETUP_STEP" ]]; then exit 7; fi
 exit "${DICTATION_EXIT:-0}"
 SH
 done
@@ -41,6 +43,11 @@ printf '%s %s\n' "${0##*/}" "$*" >> "$DICTATION_LOG"
 exit "${SETUP_EXIT:-0}"
 SH
 done
+cat > "$test_tmp/bin/systemctl" <<'SH'
+#!/bin/bash
+printf '%s %s\n' "${0##*/}" "$*" >> "$DICTATION_LOG"
+exit "${SERVICE_EXIT:-0}"
+SH
 cat > "$test_tmp/bin/omarchy-hw-vulkan" <<'SH'
 #!/bin/bash
 exit 1
@@ -79,7 +86,7 @@ for backend in voxtype superwhisper; do
   : > "$DICTATION_LOG"
   for action in start stop toggle; do omarchy dictation "$action"; done
   if [[ $backend == "voxtype" ]]; then
-    expected=$'voxtype record start\nvoxtype record stop\nvoxtype record toggle'
+    expected=$'voxtype record start\nvoxtype status\nvoxtype record stop\nvoxtype record toggle'
   else
     expected=$'superwhisper start\nsuperwhisper stop\nsuperwhisper record'
   fi
@@ -89,6 +96,7 @@ pass "built-in adapters implement start stop and toggle"
 
 cat > "$test_tmp/bin/omarchy-dictation-future-backend" <<'SH'
 #!/bin/bash
+[[ ! -e /proc/$$/fd/9 ]] || exit 90
 printf '%s\n' "$1" >> "$DICTATION_LOG"
 exit "${DICTATION_EXIT:-0}"
 SH
@@ -130,8 +138,70 @@ omarchy-install-dictation-voxtype
 DICTATION_INSTALLED="voxtype superwhisper"
 : > "$DICTATION_LOG"
 omarchy-install-dictation-voxtype
-! grep -q 'voxtype setup' "$DICTATION_LOG" || fail "installed Voxtype is selected without repeating setup"
-pass "Voxtype installer selects existing installations and preserves cancellation"
+grep -q 'voxtype setup --download --no-post-install' "$DICTATION_LOG" || fail "installed Voxtype retries model setup"
+printf '%s\n' 'custom model configuration' > "$XDG_CONFIG_HOME/voxtype/config.toml"
+printf '%s\n' superwhisper > "$config"
+for step in 'setup --download --no-post-install' 'setup systemd'; do
+  if FAIL_SETUP_STEP="$step" omarchy-install-dictation-voxtype > "$test_tmp/output" 2>&1; then fail "incomplete setup must fail"; fi
+  [[ $(cat "$config") == "superwhisper" ]] || fail "incomplete setup preserves selection"
+done
+if SERVICE_EXIT=1 omarchy-install-dictation-voxtype > "$test_tmp/output" 2>&1; then fail "service failure must fail"; fi
+[[ $(cat "$config") == "superwhisper" ]] || fail "service failure preserves selection"
+omarchy-install-dictation-voxtype
+[[ $(cat "$config") == "voxtype" ]] || fail "retry finishes installed Voxtype setup"
+[[ $(cat "$XDG_CONFIG_HOME/voxtype/config.toml") == "custom model configuration" ]] || fail "retry preserves custom configuration"
+pass "Voxtype retries incomplete model and service setup without replacing configuration"
+
+: > "$DICTATION_LOG"
+if DICTATION_EXIT=7 omarchy-dictation-set-backend superwhisper > "$test_tmp/output" 2>&1; then fail "failed stop must prevent switching"; fi
+[[ $(cat "$config") == "voxtype" ]] || fail "failed stop preserves selection"
+omarchy-dictation-set-backend superwhisper
+[[ $(cat "$DICTATION_LOG") == $'voxtype status\nvoxtype record stop\nvoxtype status\nvoxtype record stop' ]] || fail "switch stops the previous backend"
+[[ $(cat "$config") == "superwhisper" ]] || fail "successful stop permits switching"
+: > "$DICTATION_LOG"
+omarchy-dictation-set-backend superwhisper
+[[ ! -s $DICTATION_LOG ]] || fail "reselecting does not interrupt recording"
+printf '%s\n' voxtype > "$config"
+VOXTYPE_STATUS=stopped omarchy-dictation-set-backend superwhisper
+[[ $(cat "$config") == "superwhisper" ]] || fail "a stopped Voxtype daemon permits switching"
+printf '%s\n' removed-backend > "$config"
+omarchy-dictation-set-backend voxtype
+[[ $(cat "$config") == "voxtype" ]] || fail "a removed adapter permits recovery"
+pass "switching stops recordings, preserves failed stops, and recovers unavailable providers"
+
+# Readers may run throughout a switch, but must never observe a truncated file.
+(
+  for ((i = 0; i < 200; i++)); do
+    selection=$(cat "$config")
+    [[ $selection == "voxtype" || $selection == "superwhisper" ]] || exit 1
+  done
+) &
+reader=$!
+for ((i = 0; i < 20; i++)); do
+  omarchy-dictation-set-backend voxtype
+  omarchy-dictation-set-backend superwhisper
+done
+wait "$reader" || fail "concurrent readers always see a complete selection"
+printf '%s\n' voxtype > "$config"
+pass "selection updates are atomic for concurrent readers"
+
+lua <<'LUA'
+local root = os.getenv("ROOT")
+local configured, bindings = false, {}
+o = {
+  shell_succeeds = function(command)
+    assert(command == "omarchy-default-dictation")
+    return configured
+  end,
+  bind = function(...) table.insert(bindings, {...}) end,
+}
+dofile(root .. "/default/hypr/bindings/dictation.lua")
+assert(#bindings == 0, "unconfigured dictation leaves application keys available")
+configured = true
+dofile(root .. "/default/hypr/bindings/dictation.lua")
+assert(#bindings == 5, "any configured backend receives the same bindings")
+LUA
+pass "dictation shortcuts require a selection without limiting backend names"
 
 lua <<'LUA'
 local root = os.getenv("ROOT")
