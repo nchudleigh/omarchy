@@ -200,11 +200,11 @@ o.bind("SUPER + A", "Personal binding", "my-command")
 dofile("/old/superwhisper/shortcuts.lua")
 -- Superwhisper managed shortcuts END
 LUA
-/bin/bash -euo pipefail "$ROOT/migrations/1791403252.sh"
+/bin/bash -euo pipefail "$ROOT/migrations/1791446717.sh"
 [[ $(omarchy-dictation backend) == "superwhisper" ]] || fail "portable migration preserves Superwhisper when Voxtype is installed"
 [[ $(cat "$DICTATION_PACKAGE_LOG") == $'superwhisper-bin\n/usr/share/superwhisper/setup-user' ]] || fail "portable migration installs and configures the OPR package"
 grep -Fq 'Personal binding' "$XDG_CONFIG_HOME/hypr/bindings.lua" || fail "portable migration retains personal bindings"
-/bin/bash -euo pipefail "$ROOT/migrations/1791403252.sh"
+/bin/bash -euo pipefail "$ROOT/migrations/1791446717.sh"
 (( $(wc -l < "$DICTATION_PACKAGE_LOG") == 2 )) || fail "portable migration is idempotent"
 pass "portable migration preserves the backend and moves its bridge out of personal Hyprland config"
 
