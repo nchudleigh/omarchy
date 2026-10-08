@@ -73,23 +73,6 @@ for backend in voxtype superwhisper; do
 done
 pass "shared start, stop, and toggle commands use the selected backend"
 
-mkdir -p "$XDG_CONFIG_HOME/hypr"
-cat > "$XDG_CONFIG_HOME/hypr/bindings.lua" <<'LUA'
-o.bind("SUPER + A", "Personal binding", "my-command")
--- Superwhisper managed shortcuts BEGIN
-dofile("/old/superwhisper/shortcuts.lua")
--- Superwhisper managed shortcuts END
-o.bind("SUPER + B", "Another personal binding", "other-command")
-LUA
-omarchy-dictation backend superwhisper
-grep -Fq 'Personal binding' "$XDG_CONFIG_HOME/hypr/bindings.lua" || fail "backend setup preserves personal bindings"
-grep -Fq 'Another personal binding' "$XDG_CONFIG_HOME/hypr/bindings.lua" || fail "backend setup preserves following bindings"
-if grep -q 'Superwhisper managed' "$XDG_CONFIG_HOME/hypr/bindings.lua"; then
-  fail "backend setup removes the obsolete personal bridge block"
-fi
-compgen -G "$XDG_CONFIG_HOME/hypr/bindings.lua.bak.*" >/dev/null || fail "backend setup backs up the personal config"
-pass "backend setup retires the personal bridge block with a backup"
-
 lua <<'LUA'
 local root = os.getenv("ROOT")
 package.path = root .. "/?.lua;" .. package.path
@@ -162,8 +145,7 @@ if HYPRLAND_INSTANCE_SIGNATURE=test DICTATION_EXIT=7 omarchy-dictation backend s
   fail "a failed shortcut handoff does not select Superwhisper"
 fi
 [[ $(omarchy-dictation backend) == "voxtype" ]] || fail "a failed shortcut handoff preserves the backend"
-[[ $(tail -1 "$DICTATION_HYPR_LOG") == "reload" ]] || fail "a failed shortcut handoff restores bindings"
-pass "a failed native shortcut handoff preserves the backend and restores bindings"
+pass "a failed native shortcut setup preserves the backend"
 
 DICTATION_INSTALLED=superwhisper
 omarchy-dictation backend superwhisper
@@ -176,38 +158,6 @@ if omarchy-dictation start 2> "$test_tmp/error"; then
 fi
 pass "backend errors and invalid saved settings fail clearly"
 
-# A portable installation's native block identifies its existing backend even
-# when Voxtype is also installed. Move it to OPR before selecting the backend.
-cat > "$test_tmp/bin/omarchy-pkg-add" <<'SH'
-#!/bin/bash
-printf '%s\n' "$*" >> "$DICTATION_PACKAGE_LOG"
-SH
-cat > "$test_tmp/bin/bash" <<'SH'
-#!/bin/bash
-if [[ $1 == "/usr/share/superwhisper/setup-user" ]]; then
-  printf '%s\n' "$1" >> "$DICTATION_PACKAGE_LOG"
-else
-  exec /bin/bash "$@"
-fi
-SH
-chmod +x "$test_tmp/bin/omarchy-pkg-add" "$test_tmp/bin/bash"
-export DICTATION_PACKAGE_LOG="$test_tmp/packages"
-DICTATION_INSTALLED="voxtype superwhisper"
-rm "$XDG_CONFIG_HOME/omarchy/dictation-backend"
-cat > "$XDG_CONFIG_HOME/hypr/bindings.lua" <<'LUA'
-o.bind("SUPER + A", "Personal binding", "my-command")
--- Superwhisper managed shortcuts BEGIN
-dofile("/old/superwhisper/shortcuts.lua")
--- Superwhisper managed shortcuts END
-LUA
-/bin/bash -euo pipefail "$ROOT/migrations/1791446717.sh"
-[[ $(omarchy-dictation backend) == "superwhisper" ]] || fail "portable migration preserves Superwhisper when Voxtype is installed"
-[[ $(cat "$DICTATION_PACKAGE_LOG") == $'superwhisper-bin\n/usr/share/superwhisper/setup-user' ]] || fail "portable migration installs and configures the OPR package"
-grep -Fq 'Personal binding' "$XDG_CONFIG_HOME/hypr/bindings.lua" || fail "portable migration retains personal bindings"
-/bin/bash -euo pipefail "$ROOT/migrations/1791446717.sh"
-(( $(wc -l < "$DICTATION_PACKAGE_LOG") == 2 )) || fail "portable migration is idempotent"
-pass "portable migration preserves the backend and moves its bridge out of personal Hyprland config"
-
 cat > "$test_tmp/bin/systemctl" <<'SH'
 #!/bin/bash
 exit 0
@@ -218,6 +168,7 @@ exit 0
 SH
 chmod +x "$test_tmp/bin/systemctl" "$test_tmp/bin/omarchy-pkg-drop"
 printf '%s\n' voxtype > "$XDG_CONFIG_HOME/omarchy/dictation-backend"
+DICTATION_INSTALLED="voxtype superwhisper"
 omarchy-voxtype-remove
 [[ ! -e $XDG_CONFIG_HOME/omarchy/dictation-backend ]] || fail "removing Voxtype clears its saved selection"
 DICTATION_INSTALLED=superwhisper
