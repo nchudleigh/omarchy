@@ -2,8 +2,10 @@
 
 set -e
 
+# Superwhisper is the default dictation; Voxtype stays under Setup > Defaults >
+# Dictation.
 if omarchy-done ensure voxtype-install-invitation; then
-  omarchy-notification-send -u critical -g  "Install Dictation" \
+  omarchy-notification-send -u critical -g  "Install Dictation with Superwhisper" \
     "Click to install voice dictation for Omarchy." \
-    --exec omarchy-menu summon setup.default.dictation
+    --exec omarchy-default-dictation superwhisper
 fi

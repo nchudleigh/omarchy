@@ -45,8 +45,8 @@ run_invitation_hook
 [[ -f $test_home/.local/state/omarchy/done/voxtype-install-invitation ]] || fail "Voxtype invitation records completion"
 [[ -f $hook_path ]] || fail "Voxtype invitation keeps its hook installed"
 [[ $(grep -c '^notification$' "$log_file") -eq 1 ]] || fail "Voxtype invitation sends one notification"
-grep -qx 'exec:omarchy-menu summon setup.default.dictation' "$log_file" ||
-  fail "dictation invitation opens the backend installation choices"
+grep -qx 'exec:omarchy-default-dictation superwhisper' "$log_file" ||
+  fail "dictation invitation installs Superwhisper, the default"
 grep -q '^systemd-run:' "$log_file" && fail "Voxtype invitation needs no unit to hold an unanswered toast"
 
 HOME="$test_home" PATH="$test_bin:$ROOT/bin:$PATH" TEST_LOG="$log_file" bash "$hook_path"
