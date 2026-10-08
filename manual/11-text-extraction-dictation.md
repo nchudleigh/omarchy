@@ -16,7 +16,7 @@ Once installed, you dictate by holding down `Right Alt` or `F9`, or by toggling 
 
 The same shortcuts can use an installed Superwhisper instead. Select your backend through Setup > Defaults > Dictation. The backend installer configures it and saves the selection. Run `omarchy default dictation` to see which one is selected. Dictation requires an explicit selection.
 
-Omarchy loads the selected backend's desktop integration automatically. No Superwhisper configuration is needed in `~/.config/hypr/`; selecting a backend removes Superwhisper's old generated block from `bindings.lua` with a backup, preserving personal bindings.
+Omarchy loads the selected backend's desktop integration automatically. No Superwhisper configuration is needed in `~/.config/hypr/`.
 
 Custom bindings and scripts can use `omarchy dictation start`, `omarchy dictation stop`, and `omarchy dictation toggle`. The selected backend handles the recording and transcription. Selecting Superwhisper disables its native hold shortcut and sets its native toggle to `Alt + Space`, keeping it separate from Omarchy's recording keys. Superwhisper requires at least one native recording shortcut, and its cancellation shortcut stays available.
 
