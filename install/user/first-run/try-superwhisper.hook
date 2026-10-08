@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -e
+
+# Superwhisper became the default dictation after machines already dictating
+# with Voxtype were set up, so invite those once. A machine without Voxtype had
+# the first-run invitation already, and one with Superwhisper has nothing to try.
+if omarchy-cmd-present voxtype && omarchy-cmd-missing superwhisper && omarchy-done ensure superwhisper-try-invitation; then
+  omarchy-notification-send -u critical -g 󰍬 "Try Superwhisper for dictation" \
+    "Omarchy's default dictation is now Superwhisper. Voxtype stays available under Setup > Defaults > Dictation." \
+    --exec omarchy-default-dictation superwhisper
+fi
