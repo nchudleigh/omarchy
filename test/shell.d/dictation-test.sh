@@ -45,8 +45,12 @@ SH
 done
 cat > "$test_tmp/bin/systemctl" <<'SH'
 #!/bin/bash
-printf '%s %s\n' "${0##*/}" "$*" >> "$DICTATION_LOG"
-exit "${SERVICE_EXIT:-0}"
+if [[ $* == "--user is-active --quiet superwhisper.service" ]]; then
+  [[ ${DICTATION_SERVICE_ACTIVE:-1} == 1 ]]
+else
+  printf '%s %s\n' "${0##*/}" "$*" >> "$DICTATION_LOG"
+  exit "${SERVICE_EXIT:-0}"
+fi
 SH
 cat > "$test_tmp/bin/omarchy-hw-vulkan" <<'SH'
 #!/bin/bash
@@ -164,6 +168,9 @@ omarchy-dictation-set-backend superwhisper
 printf '%s\n' voxtype > "$config"
 VOXTYPE_STATUS=stopped omarchy-dictation-set-backend superwhisper
 [[ $(cat "$config") == "superwhisper" ]] || fail "a stopped Voxtype daemon permits switching"
+printf '%s\n' superwhisper > "$config"
+DICTATION_SERVICE_ACTIVE=0 omarchy-dictation-set-backend voxtype
+[[ $(cat "$config") == "voxtype" ]] || fail "a stopped Superwhisper service permits switching"
 printf '%s\n' removed-backend > "$config"
 omarchy-dictation-set-backend voxtype
 [[ $(cat "$config") == "voxtype" ]] || fail "a removed adapter permits recovery"
