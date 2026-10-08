@@ -186,10 +186,41 @@ exit 0
 SH
 cat > "$test_tmp/bin/omarchy-pkg-drop" <<'SH'
 #!/bin/bash
-exit 0
+printf '%s\n' "$*" >> "$DICTATION_LOG"
+exit "${REMOVE_EXIT:-0}"
 SH
 chmod +x "$test_tmp/bin/systemctl" "$test_tmp/bin/omarchy-pkg-drop"
-omarchy-voxtype-remove
+omarchy-remove-dictation-voxtype
 [[ ! -e $config ]] || fail "removing Voxtype clears selection"
 if omarchy-default-dictation 2> "$test_tmp/error"; then fail "removal must not auto-select another backend"; fi
 pass "removal clears selection without automatic fallback"
+
+cat > "$test_tmp/bin/omarchy-shell" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" >> "$DICTATION_LOG"
+SH
+chmod +x "$test_tmp/bin/omarchy-shell"
+export XDG_DATA_HOME="$test_tmp/data"
+mkdir -p "$HOME/.local/bin" "$XDG_DATA_HOME/superwhisper/app" "$XDG_DATA_HOME/superwhisper/models" "$XDG_CONFIG_HOME/omarchy/plugins" "$HOME/.agents/skills" "$HOME/.claude/skills"
+ln -s /usr/bin/superwhisper "$HOME/.local/bin/superwhisper"
+ln -s /opt/superwhisper "$XDG_DATA_HOME/superwhisper/app/current"
+ln -s /opt/superwhisper/assets/omarchy-plugin/superwhisper-panel "$XDG_CONFIG_HOME/omarchy/plugins/superwhisper-panel"
+ln -s /opt/superwhisper/assets/agent-skill/superwhisper "$HOME/.agents/skills/superwhisper"
+ln -s /custom/skill "$HOME/.claude/skills/superwhisper"
+printf '%s\n' retained > "$XDG_DATA_HOME/superwhisper/models/model"
+printf '%s\n' superwhisper > "$config"
+if REMOVE_EXIT=1 omarchy-remove-dictation-superwhisper > "$test_tmp/output" 2>&1; then
+  fail "failed package removal must fail"
+fi
+[[ -L $HOME/.local/bin/superwhisper && $(cat "$config") == "superwhisper" ]] || fail "failed removal preserves selection and links"
+omarchy-remove-dictation-superwhisper
+[[ ! -e $config ]] || fail "Superwhisper removal clears its selection"
+for link in "$HOME/.local/bin/superwhisper" "$XDG_DATA_HOME/superwhisper/app/current" "$XDG_CONFIG_HOME/omarchy/plugins/superwhisper-panel" "$HOME/.agents/skills/superwhisper"; do
+  [[ ! -L $link ]] || fail "Superwhisper removal unlinks packaged integration"
+done
+[[ $(readlink "$HOME/.claude/skills/superwhisper") == "/custom/skill" ]] || fail "custom skills are preserved"
+[[ -f $XDG_DATA_HOME/superwhisper/models/model ]] || fail "downloaded models are retained"
+printf '%s\n' voxtype > "$config"
+omarchy-remove-dictation-superwhisper
+[[ $(cat "$config") == "voxtype" ]] || fail "removing Superwhisper preserves another selected backend"
+pass "Superwhisper removal clears its selection and owned links while preserving user data and other backends"
