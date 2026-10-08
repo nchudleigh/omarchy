@@ -316,3 +316,20 @@ printf '%s\n' future-backend > "$config"
 VOXTYPE_PACKAGE=1 /bin/bash -euo pipefail "$ROOT/migrations/1791479273.sh"
 [[ $(cat "$config") == "future-backend" ]] || fail "upgrade preserves explicit backend selections"
 pass "one-time upgrade preserves existing Voxtype without runtime autodetection"
+
+# The dictation keys are listed, so a backend binding one of them itself can
+# unbind Omarchy's instead of both firing.
+keys=$(lua <<'LUA'
+package.path = os.getenv("ROOT") .. "/?.lua;" .. package.path
+hl = { dsp = { exec_cmd = function(command) return command end }, bind = function() end }
+require("default.hypr.helpers")
+o.shell_succeeds = function() return true end
+require("default.hypr.bindings.dictation")
+local out = {}
+for keys in pairs(o.dictation_keys) do out[#out + 1] = keys end
+table.sort(out)
+print(table.concat(out, ","))
+LUA
+)
+[[ $keys == "ALT + Alt_R,F9,SUPER + CTRL + X" ]] || fail "the dictation keys are listed for a backend to take over" "$keys"
+pass "dictation keys are listed for a backend to take over"
