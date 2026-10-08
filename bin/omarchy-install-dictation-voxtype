@@ -30,5 +30,4 @@ systemctl --user enable --now voxtype.service
 
 omarchy-dictation-set-backend voxtype
 hyprctl reload >/dev/null
-omarchy-restart-shell
 omarchy-notification-send -g  "Voxtype Dictation Ready" "Hold Right Alt or F9 to dictate (or toggle with Super + Ctrl + X)." -t 10000
