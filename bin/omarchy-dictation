@@ -29,7 +29,7 @@ configure_backend() {
     fi
 
     if omarchy-cmd-missing "$1"; then
-      omarchy-launch-floating-terminal-with-presentation omarchy-install-dictation "$1"
+      omarchy-launch-floating-terminal-with-presentation "omarchy-install-dictation-$1"
     else
       # Superwhisper requires a recording shortcut. Keep its native toggle away
       # from Omarchy's Right Alt/F9 hold and Super + Ctrl + X toggle.

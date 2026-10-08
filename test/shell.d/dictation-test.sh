@@ -142,7 +142,7 @@ if omarchy-dictation backend invalid 2> "$test_tmp/error"; then
 fi
 DICTATION_INSTALLED=superwhisper
 omarchy-dictation backend voxtype
-[[ $(cat "$DICTATION_INSTALL_LOG") == "omarchy-install-dictation voxtype" ]] || fail "missing backend opens its installation flow"
+[[ $(cat "$DICTATION_INSTALL_LOG") == "omarchy-install-dictation-voxtype" ]] || fail "missing backend opens its installation flow"
 [[ $(omarchy-dictation backend) == "superwhisper" ]] || fail "pending installation preserves the saved backend"
 DICTATION_INSTALLED=voxtype
 if omarchy-dictation stop 2> "$test_tmp/error"; then
