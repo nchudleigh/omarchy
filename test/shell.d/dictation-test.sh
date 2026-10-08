@@ -333,3 +333,35 @@ LUA
 )
 [[ $keys == "ALT + Alt_R,F9,SUPER + CTRL + X" ]] || fail "the dictation keys are listed for a backend to take over" "$keys"
 pass "dictation keys are listed for a backend to take over"
+
+# The first Superwhisper setup gives its own shortcuts Omarchy's keys; selecting
+# it again keeps whatever the user set since. A Superwhisper that refuses those
+# keys keeps its own toggle out of their way instead.
+marker="$HOME/.local/state/omarchy/done/superwhisper-dictation-shortcuts"
+rm -f "$marker"
+printf '%s\n' voxtype > "$config"
+: > "$DICTATION_LOG"
+omarchy-install-dictation-superwhisper > /dev/null
+grep -qx 'superwhisper shortcuts set toggle Ctrl+Super+X' "$DICTATION_LOG" &&
+  grep -qx 'superwhisper shortcuts set hold RightAlt' "$DICTATION_LOG" ||
+  fail "first setup gives Superwhisper Omarchy's keys" "$(cat "$DICTATION_LOG")"
+! grep -q 'Alt+Space' "$DICTATION_LOG" || fail "first setup does not fall back when the keys are accepted"
+: > "$DICTATION_LOG"
+omarchy-install-dictation-superwhisper > /dev/null
+! grep -q 'shortcuts set' "$DICTATION_LOG" || fail "selecting Superwhisper again keeps the user's shortcuts" "$(cat "$DICTATION_LOG")"
+
+rm -f "$marker"
+mv "$test_tmp/bin/superwhisper" "$test_tmp/superwhisper.stub"
+cat > "$test_tmp/bin/superwhisper" <<'SH'
+#!/bin/bash
+printf 'superwhisper %s\n' "$*" >> "$DICTATION_LOG"
+[[ $* != *Ctrl+Super+X* && $* != *RightAlt* ]]
+SH
+chmod +x "$test_tmp/bin/superwhisper"
+: > "$DICTATION_LOG"
+omarchy-install-dictation-superwhisper > /dev/null || fail "a Superwhisper that refuses Omarchy's keys still installs"
+grep -qx 'superwhisper shortcuts set toggle Alt+Space' "$DICTATION_LOG" &&
+  grep -qx 'superwhisper shortcuts set hold none' "$DICTATION_LOG" ||
+  fail "a Superwhisper that refuses Omarchy's keys keeps its toggle out of their way" "$(cat "$DICTATION_LOG")"
+mv "$test_tmp/superwhisper.stub" "$test_tmp/bin/superwhisper"
+pass "Superwhisper's own shortcuts take Omarchy's keys once, and keep the user's choice after"

@@ -7,10 +7,21 @@ set -e
 
 omarchy-pkg-add superwhisper-bin
 bash /usr/share/superwhisper/setup-user
-# Superwhisper requires a native recording shortcut; keep it separate from
-# Omarchy's push-to-talk keys.
-superwhisper shortcuts set toggle "Alt+Space" >/dev/null
-superwhisper shortcuts set hold none >/dev/null
+# On first setup, Superwhisper's own shortcuts use Omarchy's keys: Super + Ctrl
+# + X toggles and Right Alt holds. Superwhisper then takes those keys over (see
+# o.dictation_keys) and handles them itself: no process per key press, and a
+# quick Right Alt key combination reaches the app instead of starting
+# dictation. F9 stays Omarchy's push-to-talk.
+# Later selections keep whatever the user has set since. A Superwhisper that
+# can't take Omarchy's keys over refuses them; it then keeps its own toggle
+# out of their way.
+if ! omarchy-done check superwhisper-dictation-shortcuts; then
+  if ! { superwhisper shortcuts set toggle "Ctrl+Super+X" && superwhisper shortcuts set hold RightAlt; } >/dev/null 2>&1; then
+    superwhisper shortcuts set toggle "Alt+Space" >/dev/null
+    superwhisper shortcuts set hold none >/dev/null
+  fi
+  omarchy-done mark superwhisper-dictation-shortcuts
+fi
 omarchy-dictation-set-backend superwhisper
 hyprctl reload >/dev/null
 omarchy-notification-send -g  "Superwhisper Dictation Ready" "Hold Right Alt or F9 to dictate (or toggle with Super + Ctrl + X)." -t 10000
